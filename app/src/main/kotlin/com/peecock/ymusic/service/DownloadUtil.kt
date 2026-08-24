@@ -14,6 +14,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -26,10 +27,12 @@ import com.peecock.innertube.requests.player
 import com.peecock.innertube.utils.ProxyPreferences
 import com.peecock.ymusic.Database
 import com.peecock.ymusic.enums.AudioQualityFormat
+import com.peecock.ymusic.enums.ExoPlayerDiskDownloadCacheMaxSize
 import com.peecock.ymusic.models.Format
 import com.peecock.ymusic.query
 import com.peecock.ymusic.utils.RingBuffer
 import com.peecock.ymusic.utils.audioQualityFormatKey
+import com.peecock.ymusic.utils.exoPlayerDiskDownloadCacheMaxSizeKey
 import com.peecock.ymusic.utils.getEnum
 import com.peecock.ymusic.utils.preferences
 import kotlinx.coroutines.Dispatchers
@@ -313,9 +316,15 @@ object DownloadUtil {
         if(!DownloadUtil::downloadCache.isInitialized) {
             val downloadContentDirectory =
                 File(getDownloadDirectory(context), DOWNLOAD_CONTENT_DIRECTORY)
+            val cacheEvictor = when (val size = context.preferences.getEnum(
+                exoPlayerDiskDownloadCacheMaxSizeKey, ExoPlayerDiskDownloadCacheMaxSize.`2GB`
+            )) {
+                ExoPlayerDiskDownloadCacheMaxSize.Unlimited -> NoOpCacheEvictor()
+                else -> LeastRecentlyUsedCacheEvictor(size.bytes)
+            }
             downloadCache = SimpleCache(
                 downloadContentDirectory,
-                NoOpCacheEvictor(),
+                cacheEvictor,
                 getDatabaseProvider(context)
             )
         }
@@ -323,18 +332,7 @@ object DownloadUtil {
     }
 
     @Synchronized
-    fun getDownloadSimpleCache(context: Context): Cache {
-        if(!DownloadUtil::downloadCache.isInitialized) {
-            val downloadContentDirectory =
-                File(getDownloadDirectory(context), DOWNLOAD_CONTENT_DIRECTORY)
-            downloadCache = SimpleCache(
-                downloadContentDirectory,
-                NoOpCacheEvictor(),
-                getDatabaseProvider(context)
-            )
-        }
-        return downloadCache
-    }
+    fun getDownloadSimpleCache(context: Context): Cache = getDownloadCache(context)
 
     @Synchronized
     private fun ensureDownloadManagerInitialized(context: Context) {
