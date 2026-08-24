@@ -147,7 +147,7 @@
             android:stopWithTask="false"></service>
         <service
             android:name=".service.PlayerMediaBrowserService"
-            android:enabled="false"
+            android:enabled="true"
             android:exported="true"
             tools:ignore="ExportedService">
             <intent-filter>

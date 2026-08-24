@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
+import android.os.Process
 import android.support.v4.media.MediaBrowserCompat.MediaItem
 import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.session.MediaSessionCompat
@@ -79,11 +80,20 @@ class PlayerMediaBrowserService : MediaBrowserServiceCompat(), ServiceConnection
         clientPackageName: String,
         clientUid: Int,
         rootHints: Bundle?
-    ): BrowserRoot {
+    ): BrowserRoot? {
+        if (clientUid != Process.myUid() &&
+            clientUid != Process.SYSTEM_UID &&
+            clientPackageName !in KNOWN_MEDIA_BROWSER_CLIENTS
+        ) {
+            // Unrecognized caller: this service is exported (required for Android Auto/
+            // Assistant to bind to it), so anything not on the allowlist above is denied
+            // root access rather than being granted full library/playback control.
+            return null
+        }
+
         bindService(intent<PlayerService>(), this, Context.BIND_AUTO_CREATE)
         return BrowserRoot(
             MediaId.root,
-            //bundleOf("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT" to 1)
             Bundle().apply {
                 putBoolean(MEDIA_SEARCH_SUPPORTED, true)
                 putBoolean(CONTENT_STYLE_SUPPORTED, true)
@@ -91,20 +101,6 @@ class PlayerMediaBrowserService : MediaBrowserServiceCompat(), ServiceConnection
                 putInt(CONTENT_STYLE_PLAYABLE_HINT, CONTENT_STYLE_LIST)
             }
         )
-        /*
-        return if (clientUid == Process.myUid()
-            || clientUid == Process.SYSTEM_UID
-            || clientPackageName == "com.google.android.projection.gearhead"
-        ) {
-            bindService(intent<PlayerService>(), this, Context.BIND_AUTO_CREATE)
-            BrowserRoot(
-                MediaId.root,
-                bundleOf("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT" to 1)
-            )
-        } else {
-            null
-        }
-         */
     }
 
     @OptIn(UnstableApi::class)
@@ -528,6 +524,15 @@ class PlayerMediaBrowserService : MediaBrowserServiceCompat(), ServiceConnection
         fun forSearched(id: String) = "searched/$id"
     }
 }
+
+// Packages allowed to bind to this exported MediaBrowserService and get full
+// library/playback access. clientUid == Process.myUid()/SYSTEM_UID (checked in
+// onGetRoot) already covers the app itself and system-level callers, including
+// Android Automotive OS's built-in media browser.
+private val KNOWN_MEDIA_BROWSER_CLIENTS = setOf(
+    "com.google.android.projection.gearhead", // Android Auto
+    "com.google.android.googlequicksearchbox", // Google Assistant / Google app
+)
 
 const val MEDIA_SEARCH_SUPPORTED = "android.media.browse.SEARCH_SUPPORTED"
 private const val CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
